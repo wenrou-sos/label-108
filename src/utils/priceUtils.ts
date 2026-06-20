@@ -1,5 +1,205 @@
 import type { DailyPrice, MAData, PercentileData, PriceChange } from '@/types';
 
+export interface CorrelationResult {
+  fruitIdA: string;
+  fruitIdB: string;
+  correlation: number;
+  sampleSize: number;
+}
+
+export interface CorrelationMatrix {
+  fruitIds: string[];
+  matrix: (CorrelationResult | null)[][];
+}
+
+export const alignPriceSeries = (
+  pricesA: DailyPrice[],
+  pricesB: DailyPrice[]
+): { valuesA: number[]; valuesB: number[]; sampleSize: number } => {
+  const priceMapA = new Map<string, number>();
+  const priceMapB = new Map<string, number>();
+
+  pricesA.forEach((p) => priceMapA.set(p.date, p.avgPrice));
+  pricesB.forEach((p) => priceMapB.set(p.date, p.avgPrice));
+
+  const allDates = new Set<string>();
+  priceMapA.forEach((_, date) => allDates.add(date));
+  priceMapB.forEach((_, date) => allDates.add(date));
+
+  const sortedDates = Array.from(allDates).sort();
+  const valuesA: number[] = [];
+  const valuesB: number[] = [];
+
+  sortedDates.forEach((date) => {
+    const vA = priceMapA.get(date);
+    const vB = priceMapB.get(date);
+    if (vA !== undefined && vB !== undefined) {
+      valuesA.push(vA);
+      valuesB.push(vB);
+    }
+  });
+
+  return { valuesA, valuesB, sampleSize: valuesA.length };
+};
+
+export const calculatePearsonCorrelation = (
+  x: number[],
+  y: number[]
+): number => {
+  if (x.length !== y.length || x.length < 2) return 0;
+
+  const n = x.length;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumX2 = 0;
+  let sumY2 = 0;
+
+  for (let i = 0; i < n; i++) {
+    sumX += x[i];
+    sumY += y[i];
+    sumXY += x[i] * y[i];
+    sumX2 += x[i] * x[i];
+    sumY2 += y[i] * y[i];
+  }
+
+  const numerator = n * sumXY - sumX * sumY;
+  const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+
+  if (denominator === 0) return 0;
+  return numerator / denominator;
+};
+
+export const calculateFruitCorrelation = (
+  prices: DailyPrice[],
+  fruitIdA: string,
+  fruitIdB: string,
+  marketId?: string
+): CorrelationResult => {
+  let pricesA = prices.filter((p) => p.fruitId === fruitIdA);
+  let pricesB = prices.filter((p) => p.fruitId === fruitIdB);
+
+  if (marketId) {
+    pricesA = pricesA.filter((p) => p.marketId === marketId);
+    pricesB = pricesB.filter((p) => p.marketId === marketId);
+  } else {
+    const avgByDate = (priceList: DailyPrice[]): DailyPrice[] => {
+      const map = new Map<string, { total: number; count: number; date: string; fruitId: string; marketId: string; highPrice: number; lowPrice: number; openPrice: number; closePrice: number; volume: number }>();
+      priceList.forEach((p) => {
+        const existing = map.get(p.date);
+        if (existing) {
+          existing.total += p.avgPrice;
+          existing.count += 1;
+          existing.highPrice = Math.max(existing.highPrice, p.highPrice);
+          existing.lowPrice = Math.min(existing.lowPrice, p.lowPrice);
+          existing.volume += p.volume;
+        } else {
+          map.set(p.date, {
+            total: p.avgPrice,
+            count: 1,
+            date: p.date,
+            fruitId: p.fruitId,
+            marketId: 'avg',
+            highPrice: p.highPrice,
+            lowPrice: p.lowPrice,
+            openPrice: p.openPrice,
+            closePrice: p.closePrice,
+            volume: p.volume,
+          });
+        }
+      });
+      return Array.from(map.values()).map((e) => ({
+        date: e.date,
+        fruitId: e.fruitId,
+        marketId: e.marketId,
+        avgPrice: e.total / e.count,
+        highPrice: e.highPrice,
+        lowPrice: e.lowPrice,
+        openPrice: e.openPrice,
+        closePrice: e.closePrice,
+        volume: e.volume,
+      }));
+    };
+    pricesA = avgByDate(pricesA);
+    pricesB = avgByDate(pricesB);
+  }
+
+  pricesA.sort((a, b) => a.date.localeCompare(b.date));
+  pricesB.sort((a, b) => a.date.localeCompare(b.date));
+
+  const { valuesA, valuesB, sampleSize } = alignPriceSeries(pricesA, pricesB);
+
+  return {
+    fruitIdA,
+    fruitIdB,
+    correlation: calculatePearsonCorrelation(valuesA, valuesB),
+    sampleSize,
+  };
+};
+
+export const buildCorrelationMatrix = (
+  prices: DailyPrice[],
+  fruitIds: string[],
+  marketId?: string
+): CorrelationMatrix => {
+  const n = fruitIds.length;
+  const matrix: (CorrelationResult | null)[][] = Array.from({ length: n }, () =>
+    Array(n).fill(null)
+  );
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i; j < n; j++) {
+      if (i === j) {
+        matrix[i][j] = {
+          fruitIdA: fruitIds[i],
+          fruitIdB: fruitIds[j],
+          correlation: 1,
+          sampleSize: prices.filter((p) => p.fruitId === fruitIds[i]).length,
+        };
+      } else {
+        const result = calculateFruitCorrelation(prices, fruitIds[i], fruitIds[j], marketId);
+        matrix[i][j] = result;
+        matrix[j][i] = { ...result, fruitIdA: fruitIds[j], fruitIdB: fruitIds[i] };
+      }
+    }
+  }
+
+  return { fruitIds, matrix };
+};
+
+export const getTopCorrelatedFruits = (
+  prices: DailyPrice[],
+  targetFruitId: string,
+  allFruitIds: string[],
+  marketId?: string,
+  limit: number = 3
+): { positive: CorrelationResult[]; negative: CorrelationResult[] } => {
+  const otherFruitIds = allFruitIds.filter((id) => id !== targetFruitId);
+  const results: CorrelationResult[] = otherFruitIds.map((id) =>
+    calculateFruitCorrelation(prices, targetFruitId, id, marketId)
+  );
+
+  const sorted = results.sort((a, b) => b.correlation - a.correlation);
+  const positive = sorted.filter((r) => r.sampleSize >= 3).slice(0, limit);
+  const negative = [...sorted].reverse().filter((r) => r.sampleSize >= 3).slice(0, limit);
+
+  return { positive, negative };
+};
+
+export const filterPricesByDays = (
+  prices: DailyPrice[],
+  days: number
+): DailyPrice[] => {
+  if (prices.length === 0) return [];
+  const sorted = [...prices].sort((a, b) => a.date.localeCompare(b.date));
+  const latestDate = sorted[sorted.length - 1].date;
+  const endDate = new Date(latestDate);
+  const startDate = new Date(endDate);
+  startDate.setDate(startDate.getDate() - days);
+  const startStr = startDate.toISOString().split('T')[0];
+  return sorted.filter((p) => p.date >= startStr);
+};
+
 export const calculatePriceChange = (
   prices: DailyPrice[],
   fruitId: string,

@@ -139,3 +139,15 @@ export interface TriggeredAlert {
   triggeredAt: number;
   acknowledged: boolean;
 }
+
+export interface CorrelationResult {
+  fruitIdA: string;
+  fruitIdB: string;
+  correlation: number;
+  sampleSize: number;
+}
+
+export interface CorrelationMatrix {
+  fruitIds: string[];
+  matrix: (CorrelationResult | null)[][];
+}

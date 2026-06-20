@@ -16,10 +16,21 @@ import { usePriceData } from '@/hooks/usePriceData';
 import FilterBar from '@/components/FilterBar';
 import PriceKLineChart from '@/components/charts/PriceKLineChart';
 import MultiLineChart, { COLORS } from '@/components/charts/MultiLineChart';
+import CorrelationHeatmap from '@/components/charts/CorrelationHeatmap';
+import CorrelationDetailModal from '@/components/charts/CorrelationDetailModal';
+import CorrelationRecommendations from '@/components/charts/CorrelationRecommendations';
 import { formatPrice, formatPercent } from '@/utils/formatters';
+import {
+  buildCorrelationMatrix,
+  getTopCorrelatedFruits,
+  filterPricesByDays,
+} from '@/utils/priceUtils';
+import type { CorrelationResult, TimePeriod } from '@/types';
+
+const DEFAULT_CORRELATION_FRUIT_COUNT = 8;
 
 export default function TrendAnalysis() {
-  const { loadAllData, isLoading, fruits, markets, filters } = useDataStore();
+  const { loadAllData, isLoading, fruits, markets, filters, setTimePeriod, dailyPrices } = useDataStore();
 
   const selectedFruitId = filters.selectedFruits.length > 0
     ? filters.selectedFruits[0]
@@ -29,14 +40,35 @@ export default function TrendAnalysis() {
     ? filters.selectedMarkets
     : markets.slice(0, 4).map((m) => m.id);
 
+  const selectedMarketId = selectedMarketIds[0];
+
   const { singleSeriesPrices, getPricesForFruitMarket, priceChange, periodChange } = usePriceData({
     fruitId: selectedFruitId,
-    marketId: selectedMarketIds[0],
+    marketId: selectedMarketId,
   });
+
+  const [correlationSelectedFruitIds, setCorrelationSelectedFruitIds] = useState<string[]>([]);
+  const [correlationTimePeriod, setCorrelationTimePeriod] = useState<TimePeriod>(filters.timePeriod);
+  const [detailModalData, setDetailModalData] = useState<CorrelationResult | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   useEffect(() => {
     loadAllData();
   }, [loadAllData]);
+
+  useEffect(() => {
+    setCorrelationTimePeriod(filters.timePeriod);
+  }, [filters.timePeriod]);
+
+  useEffect(() => {
+    if (fruits.length > 0 && correlationSelectedFruitIds.length === 0) {
+      const defaultIds = fruits.slice(0, DEFAULT_CORRELATION_FRUIT_COUNT).map((f) => f.id);
+      if (selectedFruitId && !defaultIds.includes(selectedFruitId)) {
+        defaultIds[0] = selectedFruitId;
+      }
+      setCorrelationSelectedFruitIds(defaultIds);
+    }
+  }, [fruits, selectedFruitId, correlationSelectedFruitIds.length]);
 
   const multiSeriesData = useMemo(() => {
     if (!selectedFruitId) return [];
@@ -51,12 +83,76 @@ export default function TrendAnalysis() {
   }, [selectedFruitId, selectedMarketIds, markets, getPricesForFruitMarket]);
 
   const currentFruit = fruits.find((f) => f.id === selectedFruitId);
-  const currentMarket = markets.find((m) => m.id === selectedMarketIds[0]);
+  const currentMarket = markets.find((m) => m.id === selectedMarketId);
 
   const subTextColor = useColorModeValue('gray.500', 'gray.400');
   const headingColor = useColorModeValue('gray.800', 'gray.100');
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.100', 'gray.700');
+
+  const correlationPrices = useMemo(() => {
+    const days = correlationTimePeriod === '7d' ? 7 : correlationTimePeriod === '30d' ? 30 : 90;
+    return filterPricesByDays(dailyPrices, days);
+  }, [dailyPrices, correlationTimePeriod]);
+
+  const correlationMatrix = useMemo(() => {
+    if (correlationSelectedFruitIds.length < 2 || correlationPrices.length === 0) return null;
+    return buildCorrelationMatrix(correlationPrices, correlationSelectedFruitIds, selectedMarketId);
+  }, [correlationSelectedFruitIds, correlationPrices, selectedMarketId]);
+
+  const { positive: topPositive, negative: topNegative } = useMemo(() => {
+    if (!selectedFruitId || fruits.length === 0 || correlationPrices.length === 0) {
+      return { positive: [], negative: [] };
+    }
+    const allFruitIds = fruits.map((f) => f.id);
+    return getTopCorrelatedFruits(correlationPrices, selectedFruitId, allFruitIds, selectedMarketId, 3);
+  }, [selectedFruitId, fruits, correlationPrices, selectedMarketId]);
+
+  const toggleCorrelationFruit = (fruitId: string) => {
+    setCorrelationSelectedFruitIds((prev) => {
+      if (prev.includes(fruitId)) {
+        return prev.filter((id) => id !== fruitId);
+      }
+      return [...prev, fruitId];
+    });
+  };
+
+  const resetCorrelationFruits = () => {
+    const defaultIds = fruits.slice(0, DEFAULT_CORRELATION_FRUIT_COUNT).map((f) => f.id);
+    setCorrelationSelectedFruitIds(defaultIds);
+  };
+
+  const handleCorrelationCellClick = (result: CorrelationResult) => {
+    setDetailModalData(result);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleRecommendationClick = (result: CorrelationResult) => {
+    setDetailModalData(result);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleCorrelationTimePeriodChange = (period: TimePeriod) => {
+    setCorrelationTimePeriod(period);
+    setTimePeriod(period);
+  };
+
+  const detailFruitA = detailModalData ? fruits.find((f) => f.id === detailModalData.fruitIdA) : undefined;
+  const detailFruitB = detailModalData ? fruits.find((f) => f.id === detailModalData.fruitIdB) : undefined;
+
+  const detailPricesA = useMemo(() => {
+    if (!detailModalData) return [];
+    return correlationPrices
+      .filter((p) => p.fruitId === detailModalData.fruitIdA && (!selectedMarketId || p.marketId === selectedMarketId))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [detailModalData, correlationPrices, selectedMarketId]);
+
+  const detailPricesB = useMemo(() => {
+    if (!detailModalData) return [];
+    return correlationPrices
+      .filter((p) => p.fruitId === detailModalData.fruitIdB && (!selectedMarketId || p.marketId === selectedMarketId))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [detailModalData, correlationPrices, selectedMarketId]);
 
   return (
     <VStack spacing={6} align="stretch">
@@ -129,18 +225,58 @@ export default function TrendAnalysis() {
         </Card>
       )}
 
-      <PriceKLineChart
-        data={singleSeriesPrices}
-        title={`${currentFruit?.name || ''} K线图`}
+      <Grid templateColumns={{ base: '1fr', lg: 'repeat(4, 1fr)' }} gap={6}>
+        <GridItem colSpan={{ base: 1, lg: 3 }}>
+          <VStack spacing={6} align="stretch">
+            <PriceKLineChart
+              data={singleSeriesPrices}
+              title={`${currentFruit?.name || ''} K线图`}
+              isLoading={isLoading}
+              height={420}
+            />
+
+            <MultiLineChart
+              seriesData={multiSeriesData}
+              title={`${currentFruit?.name || ''} 多市场价格对比`}
+              isLoading={isLoading}
+              height={380}
+            />
+          </VStack>
+        </GridItem>
+
+        <GridItem colSpan={{ base: 1, lg: 1 }}>
+          <CorrelationRecommendations
+            targetFruit={currentFruit}
+            positiveCorrelations={topPositive}
+            negativeCorrelations={topNegative}
+            fruits={fruits}
+            isLoading={isLoading}
+            onCorrelationClick={handleRecommendationClick}
+          />
+        </GridItem>
+      </Grid>
+
+      <CorrelationHeatmap
+        matrix={correlationMatrix}
+        fruits={fruits}
+        selectedFruitIds={correlationSelectedFruitIds}
+        onFruitToggle={toggleCorrelationFruit}
+        onClearFruits={resetCorrelationFruits}
+        onCellClick={handleCorrelationCellClick}
+        timePeriod={correlationTimePeriod}
+        onTimePeriodChange={handleCorrelationTimePeriodChange}
         isLoading={isLoading}
-        height={420}
+        title="品种价格关联矩阵"
       />
 
-      <MultiLineChart
-        seriesData={multiSeriesData}
-        title={`${currentFruit?.name || ''} 多市场价格对比`}
-        isLoading={isLoading}
-        height={380}
+      <CorrelationDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        correlation={detailModalData}
+        fruitA={detailFruitA}
+        fruitB={detailFruitB}
+        pricesA={detailPricesA}
+        pricesB={detailPricesB}
       />
     </VStack>
   );
