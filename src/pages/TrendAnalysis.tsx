@@ -25,9 +25,62 @@ import {
   getTopCorrelatedFruits,
   filterPricesByDays,
 } from '@/utils/priceUtils';
-import type { CorrelationResult, TimePeriod } from '@/types';
+import type { CorrelationResult, DailyPrice, TimePeriod } from '@/types';
 
 const DEFAULT_CORRELATION_FRUIT_COUNT = 8;
+
+const avgPricesByDate = (priceList: DailyPrice[]): DailyPrice[] => {
+  const map = new Map<string, { total: number; count: number; date: string; fruitId: string; marketId: string; highPrice: number; lowPrice: number; openPrice: number; closePrice: number; volume: number }>();
+  priceList.forEach((p) => {
+    const existing = map.get(p.date);
+    if (existing) {
+      existing.total += p.avgPrice;
+      existing.count += 1;
+      existing.highPrice = Math.max(existing.highPrice, p.highPrice);
+      existing.lowPrice = Math.min(existing.lowPrice, p.lowPrice);
+      existing.volume += p.volume;
+    } else {
+      map.set(p.date, {
+        total: p.avgPrice,
+        count: 1,
+        date: p.date,
+        fruitId: p.fruitId,
+        marketId: 'avg',
+        highPrice: p.highPrice,
+        lowPrice: p.lowPrice,
+        openPrice: p.openPrice,
+        closePrice: p.closePrice,
+        volume: p.volume,
+      });
+    }
+  });
+  return Array.from(map.values()).map((e) => ({
+    date: e.date,
+    fruitId: e.fruitId,
+    marketId: e.marketId,
+    avgPrice: e.total / e.count,
+    highPrice: e.highPrice,
+    lowPrice: e.lowPrice,
+    openPrice: e.openPrice,
+    closePrice: e.closePrice,
+    volume: e.volume,
+  }));
+};
+
+const processDetailPrices = (
+  allPrices: DailyPrice[],
+  fruitId: string,
+  marketIds: string[]
+): DailyPrice[] => {
+  let prices = allPrices.filter((p) => p.fruitId === fruitId);
+  if (marketIds.length > 0) {
+    prices = prices.filter((p) => marketIds.includes(p.marketId));
+  }
+  if (marketIds.length > 1 || marketIds.length === 0) {
+    prices = avgPricesByDate(prices);
+  }
+  return prices.sort((a, b) => a.date.localeCompare(b.date));
+};
 
 export default function TrendAnalysis() {
   const { loadAllData, isLoading, fruits, markets, filters, setTimePeriod, dailyPrices } = useDataStore();
@@ -97,16 +150,16 @@ export default function TrendAnalysis() {
 
   const correlationMatrix = useMemo(() => {
     if (correlationSelectedFruitIds.length < 2 || correlationPrices.length === 0) return null;
-    return buildCorrelationMatrix(correlationPrices, correlationSelectedFruitIds, selectedMarketId);
-  }, [correlationSelectedFruitIds, correlationPrices, selectedMarketId]);
+    return buildCorrelationMatrix(correlationPrices, correlationSelectedFruitIds, selectedMarketIds);
+  }, [correlationSelectedFruitIds, correlationPrices, selectedMarketIds]);
 
   const { positive: topPositive, negative: topNegative } = useMemo(() => {
     if (!selectedFruitId || fruits.length === 0 || correlationPrices.length === 0) {
       return { positive: [], negative: [] };
     }
     const allFruitIds = fruits.map((f) => f.id);
-    return getTopCorrelatedFruits(correlationPrices, selectedFruitId, allFruitIds, selectedMarketId, 3);
-  }, [selectedFruitId, fruits, correlationPrices, selectedMarketId]);
+    return getTopCorrelatedFruits(correlationPrices, selectedFruitId, allFruitIds, selectedMarketIds, 3);
+  }, [selectedFruitId, fruits, correlationPrices, selectedMarketIds]);
 
   const toggleCorrelationFruit = (fruitId: string) => {
     setCorrelationSelectedFruitIds((prev) => {
@@ -142,17 +195,13 @@ export default function TrendAnalysis() {
 
   const detailPricesA = useMemo(() => {
     if (!detailModalData) return [];
-    return correlationPrices
-      .filter((p) => p.fruitId === detailModalData.fruitIdA && (!selectedMarketId || p.marketId === selectedMarketId))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [detailModalData, correlationPrices, selectedMarketId]);
+    return processDetailPrices(correlationPrices, detailModalData.fruitIdA, selectedMarketIds);
+  }, [detailModalData, correlationPrices, selectedMarketIds]);
 
   const detailPricesB = useMemo(() => {
     if (!detailModalData) return [];
-    return correlationPrices
-      .filter((p) => p.fruitId === detailModalData.fruitIdB && (!selectedMarketId || p.marketId === selectedMarketId))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [detailModalData, correlationPrices, selectedMarketId]);
+    return processDetailPrices(correlationPrices, detailModalData.fruitIdB, selectedMarketIds);
+  }, [detailModalData, correlationPrices, selectedMarketIds]);
 
   return (
     <VStack spacing={6} align="stretch">
