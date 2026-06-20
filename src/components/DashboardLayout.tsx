@@ -14,6 +14,8 @@ import {
   DrawerCloseButton,
   DrawerHeader,
   DrawerBody,
+  Badge,
+  Tooltip,
 } from '@chakra-ui/react';
 import {
   LayoutDashboard,
@@ -24,8 +26,13 @@ import {
   ArrowLeftRight,
   Menu,
   Leaf,
+  Bell,
+  Settings,
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { useAlertStore } from '@/store/useAlertStore';
+import AlertSettingsPanel from './AlertSettingsPanel';
 
 const navItems = [
   { path: '/', label: '综合看板', icon: LayoutDashboard },
@@ -129,9 +136,12 @@ function SidebarContent({ onNavigate }: SidebarContentProps) {
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const { isOpen: isSettingsOpen, onOpen: openSettings, onClose: closeSettings } = useDisclosure();
   const bg = useColorModeValue('gray.50', 'gray.900');
   const headerBg = useColorModeValue('white', 'gray.800');
   const headerBorder = useColorModeValue('gray.200', 'gray.700');
+  const { triggeredAlerts } = useAlertStore();
+  const unacknowledgedCount = triggeredAlerts.filter((a) => !a.acknowledged).length;
 
   return (
     <Flex h="100vh" w="100vw" overflow="hidden" bg={bg}>
@@ -180,12 +190,57 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               水果价格监测与分析系统
             </Text>
           </HStack>
+
+          <HStack spacing={2}>
+            <Tooltip label="预警设置">
+              <IconButton
+                variant="ghost"
+                onClick={openSettings}
+                aria-label="预警设置"
+                position="relative"
+              >
+                <Settings size={18} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip label={unacknowledgedCount > 0 ? `${unacknowledgedCount} 条未确认预警` : '我的预警'}>
+              <Box position="relative">
+                <IconButton
+                  variant="ghost"
+                  onClick={openSettings}
+                  aria-label="我的预警"
+                >
+                  <Bell size={18} />
+                </IconButton>
+                {unacknowledgedCount > 0 && (
+                  <Badge
+                    position="absolute"
+                    top={-1}
+                    right={-1}
+                    fontSize="10px"
+                    borderRadius="full"
+                    px={1.5}
+                    py={0.5}
+                    minW={4}
+                    h={4}
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    colorScheme="red"
+                  >
+                    {unacknowledgedCount > 9 ? '9+' : unacknowledgedCount}
+                  </Badge>
+                )}
+              </Box>
+            </Tooltip>
+          </HStack>
         </Flex>
 
         <Box flex={1} overflow="auto" p={{ base: 4, md: 6 }}>
           {children}
         </Box>
       </Flex>
+
+      <AlertSettingsPanel isOpen={isSettingsOpen} onClose={closeSettings} />
     </Flex>
   );
 }

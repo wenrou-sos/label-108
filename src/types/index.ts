@@ -98,3 +98,44 @@ export interface PercentileData {
   maxPrice: number;
   medianPrice: number;
 }
+
+export type AlertSeverity = 'warning' | 'critical';
+
+export type AlertConditionType = 'price_above' | 'price_below' | 'change_above' | 'change_below';
+
+export interface PriceAlertRule {
+  id: string;
+  name: string;
+  fruitId: string;
+  marketId: string | null;
+  conditionType: AlertConditionType;
+  threshold: number;
+  enabled: boolean;
+  createdAt: number;
+  notificationChannels: NotificationChannel[];
+}
+
+export type NotificationChannelType = 'system' | 'dingtalk' | 'email';
+
+export interface NotificationChannel {
+  type: NotificationChannelType;
+  enabled: boolean;
+  config?: Record<string, string>;
+}
+
+export interface TriggeredAlert {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  fruitId: string;
+  marketId: string | null;
+  fruitName: string;
+  marketName: string;
+  currentPrice: number;
+  threshold: number;
+  conditionType: AlertConditionType;
+  severity: AlertSeverity;
+  changePercent?: number;
+  triggeredAt: number;
+  acknowledged: boolean;
+}

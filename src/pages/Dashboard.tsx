@@ -7,6 +7,7 @@ import {
   Heading,
   Text,
   useColorModeValue,
+  useDisclosure,
 } from '@chakra-ui/react';
 import {
   TrendingUp,
@@ -15,19 +16,30 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { useDataStore } from '@/store/useDataStore';
+import { useAlertStore } from '@/store/useAlertStore';
 import { usePriceData } from '@/hooks/usePriceData';
 import StatCard from '@/components/StatCard';
 import FilterBar from '@/components/FilterBar';
 import { TopGainers, TopLosers } from '@/components/TopMovers';
 import PriceTable from '@/components/PriceTable';
+import MyAlerts from '@/components/MyAlerts';
+import AlertSettingsPanel from '@/components/AlertSettingsPanel';
 
 export default function Dashboard() {
-  const { loadAllData, isLoading, fruits, anomalies, dailyPrices } = useDataStore();
+  const { loadAllData, isLoading, fruits, markets, anomalies, dailyPrices } = useDataStore();
+  const { checkAlerts } = useAlertStore();
   const { topGainers, topLosers, prices } = usePriceData();
+  const { isOpen: isSettingsOpen, onOpen: openSettings, onClose: closeSettings } = useDisclosure();
 
   useEffect(() => {
     loadAllData();
   }, [loadAllData]);
+
+  useEffect(() => {
+    if (!isLoading && dailyPrices.length > 0 && fruits.length > 0 && markets.length > 0) {
+      checkAlerts(dailyPrices, fruits, markets);
+    }
+  }, [isLoading, dailyPrices, fruits, markets, checkAlerts]);
 
   const stats = useMemo(() => {
     if (dailyPrices.length === 0) {
@@ -145,6 +157,8 @@ export default function Dashboard() {
         </GridItem>
       </Grid>
 
+      <MyAlerts onOpenSettings={openSettings} />
+
       <Grid
         templateColumns={{
           base: 'repeat(1, 1fr)',
@@ -161,6 +175,8 @@ export default function Dashboard() {
       </Grid>
 
       <PriceTable isLoading={isLoading} />
+
+      <AlertSettingsPanel isOpen={isSettingsOpen} onClose={closeSettings} />
     </VStack>
   );
 }
