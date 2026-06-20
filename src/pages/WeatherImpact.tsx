@@ -9,8 +9,15 @@ import {
   GridItem,
   Card,
   CardBody,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItemOption,
+  MenuOptionGroup,
+  Button,
+  Badge,
 } from '@chakra-ui/react';
-import { CloudRain, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
+import { CloudRain, TrendingUp, TrendingDown, Calendar, ChevronDown } from 'lucide-react';
 import { useDataStore } from '@/store/useDataStore';
 import { useWeatherData } from '@/hooks/useWeatherData';
 import { usePriceData } from '@/hooks/usePriceData';
@@ -20,11 +27,29 @@ import WeatherMarker from '@/components/WeatherMarker';
 import { formatPercent } from '@/utils/formatters';
 
 export default function WeatherImpact() {
-  const { loadAllData, isLoading, fruits, markets, filters, dailyPrices } = useDataStore();
+  const { loadAllData, isLoading, fruits, markets, filters, dailyPrices, setSelectedFruits, setSelectedMarkets } = useDataStore();
 
-  const selectedFruitId = filters.selectedFruits.length > 0
-    ? filters.selectedFruits[0]
-    : fruits[0]?.id;
+  const { events: allEvents } = useWeatherData({});
+
+  const fruitsWithEvents = useMemo(() => {
+    const fruitEventCount = new Map<string, number>();
+    allEvents.forEach((event) => {
+      event.affectedFruits.forEach((fid) => {
+        fruitEventCount.set(fid, (fruitEventCount.get(fid) || 0) + 1);
+      });
+    });
+    return fruits
+      .filter((f) => (fruitEventCount.get(f.id) || 0) > 0)
+      .sort((a, b) => (fruitEventCount.get(b.id) || 0) - (fruitEventCount.get(a.id) || 0));
+  }, [allEvents, fruits]);
+
+  const selectedFruitId = useMemo(() => {
+    if (filters.selectedFruits.length > 0) {
+      return filters.selectedFruits[0];
+    }
+    return fruitsWithEvents[0]?.id || fruits[0]?.id;
+  }, [filters.selectedFruits, fruitsWithEvents, fruits]);
+
   const selectedMarketId = filters.selectedMarkets.length > 0
     ? filters.selectedMarkets[0]
     : markets[0]?.id;
@@ -80,6 +105,9 @@ export default function WeatherImpact() {
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.100', 'gray.700');
 
+  const currentFruit = fruits.find((f) => f.id === selectedFruitId);
+  const currentMarket = markets.find((m) => m.id === selectedMarketId);
+
   return (
     <VStack spacing={6} align="stretch">
       <VStack align="start" spacing={1}>
@@ -90,6 +118,74 @@ export default function WeatherImpact() {
           关联天气事件与价格波动，量化天气对价格的影响
         </Text>
       </VStack>
+
+      <Card bg={cardBg} border="1px solid" borderColor={borderColor} borderRadius="xl">
+        <CardBody p={5}>
+          <HStack justify="space-between" flexWrap="wrap" spacing={4}>
+            <VStack align="start" spacing={1}>
+              <Text fontSize="xs" color={subTextColor}>当前筛选</Text>
+              <HStack spacing={2}>
+                <Heading size="md" color={headingColor}>
+                  {currentFruit?.name || '请选择品种'}
+                </Heading>
+              </HStack>
+              <Text fontSize="xs" color={subTextColor}>
+                {currentMarket?.name || '请选择市场'} · {currentMarket?.city}
+              </Text>
+            </VStack>
+
+            <HStack spacing={3}>
+              <Menu>
+                <MenuButton
+                  as={Button}
+                  rightIcon={<ChevronDown size={16} />}
+                  variant="outline"
+                  size="sm"
+                >
+                  选择品种
+                </MenuButton>
+                <MenuList maxH="300px" overflowY="auto" minW="200px">
+                  <MenuOptionGroup
+                    value={selectedFruitId || ''}
+                    type="radio"
+                    onChange={(val) => setSelectedFruits([val as string])}
+                  >
+                    {fruits.map((f) => (
+                      <MenuItemOption key={f.id} value={f.id}>
+                        {f.name}
+                      </MenuItemOption>
+                    ))}
+                  </MenuOptionGroup>
+                </MenuList>
+              </Menu>
+
+              <Menu>
+                <MenuButton
+                  as={Button}
+                  rightIcon={<ChevronDown size={16} />}
+                  variant="outline"
+                  size="sm"
+                >
+                  选择市场
+                </MenuButton>
+                <MenuList maxH="300px" overflowY="auto" minW="200px">
+                  <MenuOptionGroup
+                    value={selectedMarketId || ''}
+                    type="radio"
+                    onChange={(val) => setSelectedMarkets([val as string])}
+                  >
+                    {markets.map((m) => (
+                      <MenuItemOption key={m.id} value={m.id}>
+                        {m.name}
+                      </MenuItemOption>
+                    ))}
+                  </MenuOptionGroup>
+                </MenuList>
+              </Menu>
+            </HStack>
+          </HStack>
+        </CardBody>
+      </Card>
 
       <Grid
         templateColumns={{

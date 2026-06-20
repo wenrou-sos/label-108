@@ -44,13 +44,28 @@ export default function ImportCompare() {
 
   const importedFruits = useMemo(() => fruits.filter((f) => f.isImported), [fruits]);
 
+  const importedFruitsWithCounterpart = useMemo(() => {
+    return importedFruits.filter((f) => {
+      if (f.domesticCounterpart) {
+        const match = fruits.find(
+          (x) => x.name === f.domesticCounterpart && !x.isImported
+        );
+        if (match) return true;
+      }
+      const domesticId = f.id + 'D';
+      const domesticMatch = fruits.find((x) => x.id === domesticId && !x.isImported);
+      if (domesticMatch) return true;
+      return false;
+    });
+  }, [importedFruits, fruits]);
+
   const selectedFruitId = useMemo(() => {
     if (filters.selectedFruits.length > 0) {
       const selectedImported = importedFruits.find((f) => filters.selectedFruits.includes(f.id));
       if (selectedImported) return selectedImported.id;
     }
-    return importedFruits[0]?.id;
-  }, [filters.selectedFruits, importedFruits]);
+    return importedFruitsWithCounterpart[0]?.id || importedFruits[0]?.id;
+  }, [filters.selectedFruits, importedFruits, importedFruitsWithCounterpart]);
 
   const selectedMarketId = filters.selectedMarkets.length > 0
     ? filters.selectedMarkets[0]
@@ -74,10 +89,7 @@ export default function ImportCompare() {
     const domesticMatch = fruits.find((f) => f.id === domesticId && !f.isImported);
     if (domesticMatch) return domesticMatch.id;
     
-    const domesticInCategory = fruits.find(
-      (f) => f.category === selectedFruit.category && !f.isImported && f.id !== selectedFruit.id
-    );
-    return domesticInCategory?.id;
+    return undefined;
   }, [selectedFruit, fruits]);
 
   const { getPricesForFruitMarket } = usePriceData();
