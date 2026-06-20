@@ -70,7 +70,7 @@ function AlertItem({ alert, onAcknowledge }: AlertItemProps) {
               w={10}
               h={10}
               borderRadius="lg"
-              bg={`${style.border}.100`}
+              bg={`${style.badge}.100`}
               display="flex"
               alignItems="center"
               justifyContent="center"

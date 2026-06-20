@@ -27,7 +27,7 @@ import AlertSettingsPanel from '@/components/AlertSettingsPanel';
 
 export default function Dashboard() {
   const { loadAllData, isLoading, fruits, markets, anomalies, dailyPrices } = useDataStore();
-  const { checkAlerts } = useAlertStore();
+  const { checkAlerts, setPriceData } = useAlertStore();
   const { topGainers, topLosers, prices } = usePriceData();
   const { isOpen: isSettingsOpen, onOpen: openSettings, onClose: closeSettings } = useDisclosure();
 
@@ -37,9 +37,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!isLoading && dailyPrices.length > 0 && fruits.length > 0 && markets.length > 0) {
+      setPriceData(dailyPrices, fruits, markets);
       checkAlerts(dailyPrices, fruits, markets);
     }
-  }, [isLoading, dailyPrices, fruits, markets, checkAlerts]);
+  }, [isLoading, dailyPrices, fruits, markets, checkAlerts, setPriceData]);
 
   const stats = useMemo(() => {
     if (dailyPrices.length === 0) {

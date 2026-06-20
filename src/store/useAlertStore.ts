@@ -22,6 +22,9 @@ interface AlertStore {
   rules: PriceAlertRule[];
   triggeredAlerts: TriggeredAlert[];
   lastCheckedAt: number | null;
+  cachedPrices: DailyPrice[];
+  cachedFruits: Fruit[];
+  cachedMarkets: Market[];
 
   addRule: (rule: Omit<PriceAlertRule, 'id' | 'createdAt' | 'notificationChannels'> & {
     notificationChannels?: NotificationChannel[];
@@ -29,11 +32,12 @@ interface AlertStore {
   updateRule: (id: string, updates: Partial<PriceAlertRule>) => void;
   deleteRule: (id: string) => void;
   toggleRule: (id: string) => void;
+  setPriceData: (prices: DailyPrice[], fruits: Fruit[], markets: Market[]) => void;
 
   acknowledgeAlert: (id: string) => void;
   clearTriggeredAlerts: () => void;
 
-  checkAlerts: (prices: DailyPrice[], fruits: Fruit[], markets: Market[]) => TriggeredAlert[];
+  checkAlerts: (prices?: DailyPrice[], fruits?: Fruit[], markets?: Market[]) => TriggeredAlert[];
 }
 
 export const useAlertStore = create<AlertStore>()(
@@ -42,6 +46,13 @@ export const useAlertStore = create<AlertStore>()(
       rules: [],
       triggeredAlerts: [],
       lastCheckedAt: null,
+      cachedPrices: [],
+      cachedFruits: [],
+      cachedMarkets: [],
+
+      setPriceData: (prices, fruits, markets) => {
+        set({ cachedPrices: prices, cachedFruits: fruits, cachedMarkets: markets });
+      },
 
       addRule: (rule) => {
         const newRule: PriceAlertRule = {
@@ -51,24 +62,49 @@ export const useAlertStore = create<AlertStore>()(
           notificationChannels: rule.notificationChannels || getDefaultChannels(),
         };
         set((state) => ({ rules: [...state.rules, newRule] }));
+        const { cachedPrices, cachedFruits, cachedMarkets } = get();
+        if (cachedPrices.length > 0 && cachedFruits.length > 0 && cachedMarkets.length > 0) {
+          get().checkAlerts();
+        }
       },
 
       updateRule: (id, updates) => {
         set((state) => ({
           rules: state.rules.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+          triggeredAlerts: state.triggeredAlerts.filter((a) => a.ruleId !== id),
         }));
+        const { cachedPrices, cachedFruits, cachedMarkets, rules } = get();
+        const updatedRule = rules.find((r) => r.id === id);
+        if (updatedRule?.enabled && cachedPrices.length > 0 && cachedFruits.length > 0 && cachedMarkets.length > 0) {
+          get().checkAlerts();
+        }
       },
 
       deleteRule: (id) => {
         set((state) => ({
           rules: state.rules.filter((r) => r.id !== id),
+          triggeredAlerts: state.triggeredAlerts.filter((a) => a.ruleId !== id),
         }));
       },
 
       toggleRule: (id) => {
+        const rule = get().rules.find((r) => r.id === id);
+        if (!rule) return;
+
+        const newEnabled = !rule.enabled;
         set((state) => ({
-          rules: state.rules.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)),
+          rules: state.rules.map((r) => (r.id === id ? { ...r, enabled: newEnabled } : r)),
+          triggeredAlerts: newEnabled
+            ? state.triggeredAlerts
+            : state.triggeredAlerts.filter((a) => a.ruleId !== id),
         }));
+
+        if (newEnabled) {
+          const { cachedPrices, cachedFruits, cachedMarkets } = get();
+          if (cachedPrices.length > 0 && cachedFruits.length > 0 && cachedMarkets.length > 0) {
+            get().checkAlerts();
+          }
+        }
       },
 
       acknowledgeAlert: (id) => {
@@ -84,37 +120,42 @@ export const useAlertStore = create<AlertStore>()(
       },
 
       checkAlerts: (prices, fruits, markets) => {
-        const { rules, triggeredAlerts } = get();
+        const { rules, triggeredAlerts, cachedPrices, cachedFruits, cachedMarkets } = get();
+
+        const p = prices ?? cachedPrices;
+        const f = fruits ?? cachedFruits;
+        const m = markets ?? cachedMarkets;
+
         const newTriggered: TriggeredAlert[] = [];
 
         const enabledRules = rules.filter((r) => r.enabled);
-        if (enabledRules.length === 0 || prices.length === 0) {
+        if (enabledRules.length === 0 || p.length === 0) {
           return [];
         }
 
-        const sorted = [...prices].sort((a, b) => b.date.localeCompare(a.date));
+        const sorted = [...p].sort((a, b) => b.date.localeCompare(a.date));
         const latestDate = sorted[0]?.date;
-        const previousDate = sorted.find((p) => p.date !== latestDate)?.date;
+        const previousDate = sorted.find((pr) => pr.date !== latestDate)?.date;
 
         const latestPrices = new Map<string, DailyPrice>();
         const previousPrices = new Map<string, DailyPrice>();
 
-        prices.forEach((p) => {
-          const key = `${p.fruitId}-${p.marketId}`;
-          if (p.date === latestDate) {
-            latestPrices.set(key, p);
+        p.forEach((pr) => {
+          const key = `${pr.fruitId}-${pr.marketId}`;
+          if (pr.date === latestDate) {
+            latestPrices.set(key, pr);
           }
-          if (p.date === previousDate) {
-            previousPrices.set(key, p);
+          if (pr.date === previousDate) {
+            previousPrices.set(key, pr);
           }
         });
 
         enabledRules.forEach((rule) => {
-          const fruit = fruits.find((f) => f.id === rule.fruitId);
+          const fruit = f.find((fr) => fr.id === rule.fruitId);
           if (!fruit) return;
 
           const checkPrice = (price: DailyPrice, marketId: string) => {
-            const market = markets.find((m) => m.id === marketId);
+            const market = m.find((mk) => mk.id === marketId);
             if (!market) return;
 
             const key = `${rule.fruitId}-${marketId}`;
@@ -188,11 +229,11 @@ export const useAlertStore = create<AlertStore>()(
               checkPrice(price, rule.marketId);
             }
           } else {
-            markets.forEach((m) => {
-              const key = `${rule.fruitId}-${m.id}`;
+            m.forEach((mk) => {
+              const key = `${rule.fruitId}-${mk.id}`;
               const price = latestPrices.get(key);
               if (price) {
-                checkPrice(price, m.id);
+                checkPrice(price, mk.id);
               }
             });
           }
