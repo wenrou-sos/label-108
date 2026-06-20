@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(git commit -m '.2187342742565564:559aee8acac38770151e2a1fe65094e2_6a35fce14d2cf0b7162f401c.6a35fce34d2cf0b7162f401e.6a35fce330b3af48ae10c11c:Trae CN.T\\(2026/6/20 10:37:23\\)')",
+      "PowerShell(curl.exe -X POST \"http://192.168.10.43:38427/api/records\" -H \"Content-Type: application/json\" --data-binary \"@record.json\")",
+      "PowerShell(try { $j = Get-Content record.json -Raw -Encoding UTF8 | ConvertFrom-Json; Write-Output \"JSON valid\" } catch { Write-Output \"JSON invalid: $_\" })",
+      "PowerShell(try { Get-Content record.json -Raw -Encoding UTF8 | ConvertFrom-Json | Out-Null; Write-Output \"JSON valid\" } catch { Write-Output \"JSON invalid: $_\" })"
+    ]
+  }
+}

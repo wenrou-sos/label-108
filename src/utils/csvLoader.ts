@@ -67,10 +67,11 @@ const transformDailyPrices = (data: unknown[]): DailyPrice[] => {
   }));
 };
 
-const mapAnomalyType = (type: string): AnomalyType => {
+const mapAnomalyType = (type: string, changePct: number): AnomalyType => {
   const t = type.toLowerCase();
-  if (t.includes('spike') || t.includes('up') || t.includes('涨')) return 'spike';
-  return 'drop';
+  if (t.includes('spike') || t.includes('surge') || t.includes('shortage') || t.includes('up') || t.includes('涨')) return 'spike';
+  if (t.includes('drop') || t.includes('down') || t.includes('跌')) return 'drop';
+  return changePct >= 0 ? 'spike' : 'drop';
 };
 
 const mapAnomalySeverity = (severity: string): AnomalySeverity => {
@@ -82,15 +83,15 @@ const mapAnomalySeverity = (severity: string): AnomalySeverity => {
 
 const transformAnomalies = (data: unknown[]): PriceAnomaly[] => {
   return data.map((row: any, index: number) => {
-    const type = mapAnomalyType(String(row.type || row.anomalyType || ''));
-    const changePct = parseFloat(row.priceChangePct || row.changePercent || 0);
+    const rawChangePct = parseFloat(row.priceChangePct || row.changePercent || 0);
+    const type = mapAnomalyType(String(row.type || row.anomalyType || ''), rawChangePct);
     return {
       id: String(row.id || `anom-${index}`),
       date: String(row.date || ''),
       fruitId: String(row.fruitId || ''),
       marketId: String(row.marketId || ''),
       type,
-      changePercent: type === 'spike' ? Math.abs(changePct) : -Math.abs(changePct),
+      changePercent: type === 'spike' ? Math.abs(rawChangePct) : -Math.abs(rawChangePct),
       severity: mapAnomalySeverity(String(row.severity || '')),
       possibleReason: String(row.reason || row.possibleReason || ''),
       description: String(row.description || ''),
@@ -171,6 +172,27 @@ export const loadAnomalies = async (): Promise<PriceAnomaly[]> => {
     return await parseCSV<PriceAnomaly>('/data/anomalies.csv', transformAnomalies);
   } catch {
     return getMockAnomalies();
+  }
+};
+
+export const loadHistoricalPrices = async (year: number): Promise<DailyPrice[]> => {
+  try {
+    return await parseCSV<DailyPrice>(`/data/historical_prices/${year}.csv`, transformDailyPrices);
+  } catch {
+    return [];
+  }
+};
+
+export const loadAllHistoricalPrices = async (years: number[] = [2021, 2022, 2023]): Promise<Record<number, DailyPrice[]>> => {
+  try {
+    const results = await Promise.all(years.map((y) => loadHistoricalPrices(y)));
+    const map: Record<number, DailyPrice[]> = {};
+    years.forEach((y, i) => {
+      map[y] = results[i];
+    });
+    return map;
+  } catch {
+    return {};
   }
 };
 

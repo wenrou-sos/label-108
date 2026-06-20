@@ -44,9 +44,13 @@ export default function ImportCompare() {
 
   const importedFruits = useMemo(() => fruits.filter((f) => f.isImported), [fruits]);
 
-  const selectedFruitId = filters.selectedFruits.length > 0
-    ? filters.selectedFruits[0]
-    : importedFruits[0]?.id;
+  const selectedFruitId = useMemo(() => {
+    if (filters.selectedFruits.length > 0) {
+      const selectedImported = importedFruits.find((f) => filters.selectedFruits.includes(f.id));
+      if (selectedImported) return selectedImported.id;
+    }
+    return importedFruits[0]?.id;
+  }, [filters.selectedFruits, importedFruits]);
 
   const selectedMarketId = filters.selectedMarkets.length > 0
     ? filters.selectedMarkets[0]
@@ -59,11 +63,16 @@ export default function ImportCompare() {
     
     if (selectedFruit.domesticCounterpart) {
       const match = fruits.find(
-        (f) => (f.name === selectedFruit.domesticCounterpart || 
-                selectedFruit.domesticCounterpart.includes(f.name)) && !f.isImported
+        (f) => f.name === selectedFruit.domesticCounterpart && !f.isImported
       );
       if (match) return match.id;
     }
+    
+    if (selectedFruit.id.endsWith('D')) return undefined;
+    
+    const domesticId = selectedFruit.id + 'D';
+    const domesticMatch = fruits.find((f) => f.id === domesticId && !f.isImported);
+    if (domesticMatch) return domesticMatch.id;
     
     const domesticInCategory = fruits.find(
       (f) => f.category === selectedFruit.category && !f.isImported && f.id !== selectedFruit.id

@@ -89,24 +89,24 @@ export const calculatePercentile = (
 ): PercentileData | null => {
   const filtered = prices
     .filter((p) => p.fruitId === fruitId && p.marketId === marketId)
-    .map((p) => p.avgPrice)
-    .sort((a, b) => a - b);
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   if (filtered.length === 0) return null;
 
-  const currentPrice = filtered[filtered.length - 1];
-  const minPrice = filtered[0];
-  const maxPrice = filtered[filtered.length - 1];
+  const currentPrice = filtered[filtered.length - 1].avgPrice;
+  const allPrices = filtered.map((p) => p.avgPrice).sort((a, b) => a - b);
+  const minPrice = allPrices[0];
+  const maxPrice = allPrices[allPrices.length - 1];
   const medianPrice =
-    filtered.length % 2 === 0
-      ? (filtered[filtered.length / 2 - 1] + filtered[filtered.length / 2]) / 2
-      : filtered[Math.floor(filtered.length / 2)];
+    allPrices.length % 2 === 0
+      ? (allPrices[allPrices.length / 2 - 1] + allPrices[allPrices.length / 2]) / 2
+      : allPrices[Math.floor(allPrices.length / 2)];
 
   let count = 0;
-  for (const p of filtered) {
+  for (const p of allPrices) {
     if (p <= currentPrice) count++;
   }
-  const percentile = (count / filtered.length) * 100;
+  const percentile = (count / allPrices.length) * 100;
 
   return {
     currentPrice,
